@@ -7,6 +7,7 @@ from allauth.socialaccount.adapter import get_adapter
 from allauth.socialaccount.providers.base import AuthProcess
 from allauth.socialaccount.models import SocialLogin
 from allauth.socialaccount.providers.oauth2.views import OAuth2LoginView
+from allauth.socialaccount.helpers import complete_social_login
 
 class SMSAuthenticationView(View):
     def post(self, request):
