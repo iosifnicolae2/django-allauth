@@ -3,10 +3,10 @@ from django.http import JsonResponse
 from django.template.loader import render_to_string
 from django.views import View
 import random
+from sms import Message
 
 from allauth.socialaccount.adapter import get_adapter
 
-from .message import Message
 
 class SMSAuthenticationView(View):
     def post(self, request):
@@ -30,9 +30,9 @@ class SMSAuthenticationView(View):
         content = render_to_string("sms/sms_content.txt", context)
 
         success = Message(
-            content=content,
-            from_phone=settings.SMS_FROM_NUMBER,
-            to_phone=to_phone_number
+            content,
+            settings.SMS_FROM_NUMBER,
+            to_phone_number
         ).send()
 
         if not success:
