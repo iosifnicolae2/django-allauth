@@ -33,3 +33,4 @@ virtualenv
 /.stfolder
 .direnv/
 examples/react-spa/docker-compose.override.yml
+.aider*
