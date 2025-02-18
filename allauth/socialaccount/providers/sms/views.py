@@ -24,9 +24,22 @@ class SMSAuthenticationView(View):
         return JsonResponse({'message': 'Verification code sent'})
 
     def _send_sms(self, phone_number, code):
-        # Implement SMS sending logic here
-        # You'll need to integrate with an SMS service provider
-        pass
+        from django.template.loader import render_to_string
+        from .message import Message
+        
+        template_prefix = "sms"
+        context = {
+            "code": code
+        }
+        
+        to_phone_number = [phone_number] if isinstance(phone_number, str) else phone_number
+        content = render_to_string("{0}_content.txt".format(template_prefix), context)
+        
+        return Message(
+            content=content,
+            from_phone=settings.SMS_FROM_NUMBER,
+            to_phone=to_phone_number
+        ).send()
 
 class SMSVerifyView(View):
     def post(self, request):
