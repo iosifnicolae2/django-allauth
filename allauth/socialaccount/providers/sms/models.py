@@ -9,5 +9,5 @@ class SMSVerification(models.Model):
     
     class Meta:
         indexes = [
-            models.Index(fields=['phone_number', 'code']),
+            models.Index(fields=['phone_number', 'code'], name='sms_verification_lookup'),
         ]

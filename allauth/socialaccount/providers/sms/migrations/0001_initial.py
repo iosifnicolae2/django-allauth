@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
                 ('verified', models.BooleanField(default=False)),
             ],
             options={
-                'indexes': [models.Index(fields=['phone_number', 'code'])],
+                'indexes': [models.Index(fields=['phone_number', 'code'], name='sms_verification_lookup')],
             },
         ),
     ]
