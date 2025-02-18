@@ -40,6 +40,8 @@ class SMSAuthenticationView(View):
 
         return JsonResponse({'message': 'Verification code sent'})
 
+login = SMSAuthenticationView.as_view()
+
 class SMSVerifyView(View):
     def post(self, request):
         code = request.POST.get('code')
@@ -69,3 +71,5 @@ class SMSVerifyView(View):
         # Complete login
         social_login.save(request)
         return JsonResponse({'success': True})
+
+verify = SMSVerifyView.as_view()
