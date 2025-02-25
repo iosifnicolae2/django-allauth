@@ -5,7 +5,7 @@ from phonenumber_field.modelfields import PhoneNumberField
 
 class SMSVerification(models.Model):
     phone_number = PhoneNumberField()
-    code = models.CharField()
+    code = models.TextField()
     created_at = models.DateTimeField(default=timezone.now)
     verified = models.BooleanField(default=False)
 

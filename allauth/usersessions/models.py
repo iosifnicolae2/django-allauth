@@ -88,7 +88,7 @@ class UserSession(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     ip = models.GenericIPAddressField()
     last_seen_at = models.DateTimeField(default=timezone.now)
-    session_key = models.CharField(
+    session_key = models.TextField(
         _("session key"), unique=True, editable=False
     )
     user_agent = models.CharField(max_length=200)
