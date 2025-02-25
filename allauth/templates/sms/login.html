@@ -1,0 +1,24 @@
+{% extends "sms/base.html" %}
+{% load i18n %}
+{% load allauth %}
+{% block head_title %}
+    SMS {% translate "Sign In" %}
+{% endblock head_title %}
+{% block content %}
+    {% element h1 %}
+        SMS {% trans 'Sign In' %}
+    {% endelement %}
+    {% url 'sms_login' as action_url %}
+    {% element form method="post" action=action_url %}
+        {% slot body %}
+            {% csrf_token %}
+            {% element fields form=form unlabeled=True %}
+            {% endelement %}
+        {% endslot %}
+        {% slot actions %}
+            {% element button type="submit" %}
+                {% translate "Sign In2" %}
+            {% endelement %}
+        {% endslot %}
+    {% endelement %}
+{% endblock content %}

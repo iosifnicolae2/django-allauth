@@ -329,6 +329,10 @@ class AppSettings:
         return self._setting("USER_MODEL_EMAIL_FIELD", "email")
 
     @property
+    def USER_MODEL_PHONE_NUMBER_FIELD(self):
+        return self._setting("USER_MODEL_PHONE_NUMBER_FIELD", "phone_number")
+
+    @property
     def SESSION_COOKIE_AGE(self):
         """
         Deprecated -- use Django's settings.SESSION_COOKIE_AGE instead
@@ -425,6 +429,10 @@ class AppSettings:
     @property
     def LOGIN_BY_CODE_ENABLED(self):
         return self._setting("LOGIN_BY_CODE_ENABLED", False)
+
+    @property
+    def LOGIN_BY_ACCOUNT_PASSWORD_ENABLED(self):
+        return self._setting("LOGIN_BY_ACCOUNT_PASSWORD_ENABLED", True)
 
     @property
     def LOGIN_BY_CODE_MAX_ATTEMPTS(self):

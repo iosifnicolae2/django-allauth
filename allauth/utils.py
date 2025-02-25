@@ -14,7 +14,7 @@ from django.db.models.fields import EmailField
 from django.utils.encoding import force_str
 
 from allauth import app_settings
-
+import phonenumbers
 
 # Magic number 7: if you run into collisions with this number, then you are
 # of big enough scale to start investing in a decent user model...
@@ -119,6 +119,22 @@ def valid_email_or_none(email):
             if len(email) <= EmailField().max_length:
                 ret = email.lower()
     except ValidationError:
+        pass
+    return ret
+
+
+def valid_phone_number_or_none(phone_number):
+    ret = None
+    try:
+        # Parse and validate phone number
+        parsed_number = phonenumbers.parse(phone_number, None)
+
+        if not phonenumbers.is_valid_number(parsed_number):
+            raise ValidationError("Please enter a valid phone number")
+
+        ret = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+
+    except (ValidationError, phonenumbers.NumberParseException):
         pass
     return ret
 

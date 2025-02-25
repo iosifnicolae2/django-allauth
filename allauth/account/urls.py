@@ -8,10 +8,17 @@ from . import views
 
 
 urlpatterns = [
-    path("login/", views.login, name="account_login"),
+    path("", views.homepage_login, name="homepage_login"),
     path("logout/", views.logout, name="account_logout"),
     path("inactive/", views.account_inactive, name="account_inactive"),
 ]
+
+if app_settings.LOGIN_BY_ACCOUNT_PASSWORD_ENABLED:
+    urlpatterns.extend(
+        [
+            path("login/", views.login, name="account_login"),
+        ]
+    )
 
 if not allauth_app_settings.SOCIALACCOUNT_ONLY:
     urlpatterns.extend(

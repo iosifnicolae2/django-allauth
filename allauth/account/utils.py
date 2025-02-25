@@ -123,6 +123,14 @@ def user_email(user, *args, commit=False):
         ret = ret.lower()
     return ret
 
+def user_phone_number(user, *args, commit=False):
+    if args and args[0]:
+        args = [args[0].lower()]
+    ret = user_field(user, app_settings.USER_MODEL_PHONE_NUMBER_FIELD, *args, commit=commit)
+    if ret:
+        ret = ret.lower()
+    return ret
+
 
 def has_verified_email(user, email=None) -> bool:
     from .models import EmailAddress

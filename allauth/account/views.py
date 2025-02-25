@@ -126,6 +126,7 @@ class LoginView(
                 "SOCIALACCOUNT_ENABLED": allauth_app_settings.SOCIALACCOUNT_ENABLED,
                 "SOCIALACCOUNT_ONLY": allauth_app_settings.SOCIALACCOUNT_ONLY,
                 "LOGIN_BY_CODE_ENABLED": app_settings.LOGIN_BY_CODE_ENABLED,
+                "LOGIN_BY_ACCOUNT_PASSWORD_ENABLED": app_settings.LOGIN_BY_ACCOUNT_PASSWORD_ENABLED,
                 "PASSKEY_LOGIN_ENABLED": passkey_login_enabled,
             }
         )
@@ -139,6 +140,18 @@ class LoginView(
 
 login = LoginView.as_view()
 
+
+class HomepageLoginView(
+    LoginView
+):
+    template_name = "account/homepage_login." + app_settings.TEMPLATE_EXTENSION
+
+    def get_form_class(self):
+        return get_form_class(app_settings.FORMS, "homepage_login", self.form_class)
+
+
+
+homepage_login = HomepageLoginView.as_view()
 
 class SignupView(
     RedirectAuthenticatedUserMixin,

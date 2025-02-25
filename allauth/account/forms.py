@@ -193,6 +193,9 @@ class LoginForm(forms.Form):
             request.session.set_expiry(0)
         return ret
 
+    @property
+    def form_description(self):
+        return _("If you have not created an account yet, then please sign up first.")
 
 class _DummyCustomSignupForm(forms.Form):
     def signup(self, request, user):

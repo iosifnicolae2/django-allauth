@@ -11,13 +11,13 @@ from django.utils.crypto import get_random_string
 from django.utils.translation import gettext_lazy as _
 
 from allauth.account.adapter import get_adapter as get_account_adapter
-from allauth.account.utils import user_email, user_field, user_username
+from allauth.account.utils import user_email, user_field, user_username, user_phone_number
 from allauth.core.internal.adapter import BaseAdapter
 from allauth.core.internal.modelkit import (
     deserialize_instance,
     serialize_instance,
 )
-from allauth.utils import import_attribute, valid_email_or_none
+from allauth.utils import import_attribute, valid_email_or_none, valid_phone_number_or_none
 
 from . import app_settings
 
@@ -128,10 +128,12 @@ class DefaultSocialAccountAdapter(BaseAdapter):
         first_name = data.get("first_name")
         last_name = data.get("last_name")
         email = data.get("email")
+        phone_number = data.get("phone_number")
         name = data.get("name")
         user = sociallogin.user
         user_username(user, username or "")
-        user_email(user, valid_email_or_none(email) or "")
+        user_email(user, valid_email_or_none(email) or None)
+        user_phone_number(user, valid_phone_number_or_none(phone_number))
         name_parts = (name or "").partition(" ")
         user_field(user, "first_name", first_name or name_parts[0])
         user_field(user, "last_name", last_name or name_parts[2])

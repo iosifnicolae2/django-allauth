@@ -1,1 +1,2 @@
-Your verification code is: {{ code }}
+{% load i18n %}
+{% blocktrans %}Your verification code is: {{ code }}{% endblock %}
