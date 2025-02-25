@@ -1,7 +1,7 @@
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.validators import validate_email
 
-from allauth.account import app_settings as account_app_settings
+from allauth.account import app_settings as account_settings
 from allauth.account.adapter import get_adapter as get_account_adapter
 from allauth.account.forms import (
     AddEmailForm,
@@ -13,6 +13,7 @@ from allauth.account.forms import (
     UserTokenForm,
 )
 from allauth.account.internal import flows
+from allauth.account.internal.textkit import compare_code
 from allauth.account.models import (
     EmailAddress,
     Login,
@@ -25,6 +26,14 @@ from allauth.headless.internal.restkit import inputs
 
 class SignupInput(BaseSignupForm, inputs.Input):
     password = inputs.CharField()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        password = account_settings.SIGNUP_FIELDS.get("password1")
+        if not password:
+            del self.fields["password"]
+        else:
+            self.fields["password"].required = password["required"]
 
     def clean_password(self):
         password = self.cleaned_data["password"]
@@ -41,19 +50,15 @@ class LoginInput(inputs.Input):
         username = None
         email = None
 
-        if account_app_settings.LOGIN_METHODS == {
-            account_app_settings.LoginMethod.USERNAME
-        }:
+        if account_settings.LOGIN_METHODS == {account_settings.LoginMethod.USERNAME}:
             username = cleaned_data.get("username")
             missing_field = "username"
-        elif account_app_settings.LOGIN_METHODS == {
-            account_app_settings.LoginMethod.EMAIL
-        }:
+        elif account_settings.LOGIN_METHODS == {account_settings.LoginMethod.EMAIL}:
             email = cleaned_data.get("email")
             missing_field = "email"
-        elif account_app_settings.LOGIN_METHODS == {
-            account_app_settings.LoginMethod.USERNAME,
-            account_app_settings.LoginMethod.EMAIL,
+        elif account_settings.LOGIN_METHODS == {
+            account_settings.LoginMethod.USERNAME,
+            account_settings.LoginMethod.EMAIL,
         }:
             username = cleaned_data.get("username")
             email = cleaned_data.get("email")
@@ -61,7 +66,7 @@ class LoginInput(inputs.Input):
             if email and username:
                 raise get_adapter().validation_error("email_or_username")
         else:
-            raise ImproperlyConfigured(account_app_settings.LOGIN_METHODS)
+            raise ImproperlyConfigured(account_settings.LOGIN_METHODS)
 
         if not email and not username:
             if not self.errors.get(missing_field):
@@ -74,10 +79,10 @@ class LoginInput(inputs.Input):
             credentials = {"password": password}
             if email:
                 credentials["email"] = email
-                auth_method = account_app_settings.AuthenticationMethod.EMAIL
+                auth_method = account_settings.AuthenticationMethod.EMAIL
             else:
                 credentials["username"] = username
-                auth_method = account_app_settings.AuthenticationMethod.USERNAME
+                auth_method = account_settings.AuthenticationMethod.USERNAME
             user = get_account_adapter().authenticate(context.request, **credentials)
             if user:
                 self.login = Login(user=user, email=credentials.get("email"))
@@ -96,20 +101,32 @@ class LoginInput(inputs.Input):
 class VerifyEmailInput(inputs.Input):
     key = inputs.CharField()
 
+    def __init__(self, *args, **kwargs):
+        self.process = kwargs.pop("process", None)
+        super().__init__(*args, **kwargs)
+
     def clean_key(self):
         key = self.cleaned_data["key"]
-        model = get_emailconfirmation_model()
-        confirmation = model.from_key(key)
-        valid = confirmation and not confirmation.key_expired()
-        if not valid:
-            raise get_account_adapter().validation_error(
-                "incorrect_code"
-                if account_app_settings.EMAIL_VERIFICATION_BY_CODE_ENABLED
-                else "invalid_or_expired_key"
-            )
-        if valid and not confirmation.email_address.can_set_verified():
+        if self.process:
+            if not compare_code(actual=key, expected=self.process.code):
+                raise get_account_adapter().validation_error("incorrect_code")
+            valid = True
+            email_address = self.process.email_address
+        else:
+            model = get_emailconfirmation_model()
+            verification = model.from_key(key)
+            valid = verification and not verification.key_expired()
+            if not valid:
+                raise get_account_adapter().validation_error(
+                    "incorrect_code"
+                    if account_settings.EMAIL_VERIFICATION_BY_CODE_ENABLED
+                    else "invalid_or_expired_key"
+                )
+            email_address = verification.email_address
+            self.verification = verification
+        if valid and not email_address.can_set_verified():
             raise get_account_adapter().validation_error("email_taken")
-        return confirmation
+        return key
 
 
 class RequestPasswordResetInput(ResetPasswordForm, inputs.Input):
@@ -120,10 +137,23 @@ class ResetPasswordKeyInput(inputs.Input):
     key = inputs.CharField()
 
     def __init__(self, *args, **kwargs):
-        self.user = None
+        self.user = kwargs.pop("user", None)
+        self.code = kwargs.pop("code", None)
         super().__init__(*args, **kwargs)
 
     def clean_key(self):
+        if account_settings.PASSWORD_RESET_BY_CODE_ENABLED:
+            return self._clean_key_code()
+        else:
+            return self._clean_key_link()
+
+    def _clean_key_code(self):
+        key = self.cleaned_data["key"]
+        if not compare_code(actual=key, expected=self.code):
+            raise get_account_adapter().validation_error("incorrect_code")
+        return key
+
+    def _clean_key_link(self):
         key = self.cleaned_data["key"]
         uidb36, _, subkey = key.partition("-")
         token_form = UserTokenForm(data={"uidb36": uidb36, "key": subkey})
@@ -140,7 +170,10 @@ class ResetPasswordInput(ResetPasswordKeyInput):
         cleaned_data = super().clean()
         password = self.cleaned_data.get("password")
         if self.user and password is not None:
-            get_account_adapter().clean_password(password, user=self.user)
+            try:
+                get_account_adapter().clean_password(password, user=self.user)
+            except ValidationError as e:
+                self.add_error("password", e)
         return cleaned_data
 
 

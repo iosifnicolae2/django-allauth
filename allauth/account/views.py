@@ -20,6 +20,7 @@ from allauth.account.forms import (
     ChangePasswordForm,
     ConfirmEmailVerificationCodeForm,
     ConfirmLoginCodeForm,
+    ConfirmPasswordResetCodeForm,
     LoginForm,
     ReauthenticateForm,
     RequestLoginCodeForm,
@@ -199,7 +200,7 @@ class SignupView(
         email = self.request.session.get("account_verified_email")
         if email:
             email_keys = ["email"]
-            if app_settings.SIGNUP_EMAIL_ENTER_TWICE:
+            if "email2" in app_settings.SIGNUP_FIELDS:
                 email_keys.append("email2")
             for email_key in email_keys:
                 form.fields[email_key].initial = email
@@ -233,7 +234,7 @@ class SignupView(
             except ValidationError:
                 return initial
             initial["email"] = email
-            if app_settings.SIGNUP_EMAIL_ENTER_TWICE:
+            if "email2" in app_settings.SIGNUP_FIELDS:
                 initial["email2"] = email
         return initial
 
@@ -581,6 +582,11 @@ class PasswordResetView(NextRedirectMixin, AjaxCapableProcessFormViewMixin, Form
     form_class = ResetPasswordForm
     success_url = reverse_lazy("account_reset_password_done")
 
+    def get_success_url(self):
+        if not app_settings.PASSWORD_RESET_BY_CODE_ENABLED:
+            return super().get_success_url()
+        return self.passthrough_next_url(reverse("account_confirm_password_reset_code"))
+
     def get_form_class(self):
         return get_form_class(app_settings.FORMS, "reset_password", self.form_class)
 
@@ -679,7 +685,7 @@ class PasswordResetFromKeyView(
         return _ajax_response(self.request, response, form=token_form)
 
     def get_context_data(self, **kwargs):
-        ret = super(PasswordResetFromKeyView, self).get_context_data(**kwargs)
+        ret = super().get_context_data(**kwargs)
         ret["action_url"] = reverse(
             "account_reset_password_from_key",
             kwargs={
@@ -690,7 +696,7 @@ class PasswordResetFromKeyView(
         return ret
 
     def get_form_kwargs(self):
-        kwargs = super(PasswordResetFromKeyView, self).get_form_kwargs()
+        kwargs = super().get_form_kwargs()
         kwargs["user"] = self.reset_user
         kwargs["temp_key"] = self.key
         return kwargs
@@ -717,6 +723,115 @@ class PasswordResetFromKeyDoneView(TemplateView):
 
 
 password_reset_from_key_done = PasswordResetFromKeyDoneView.as_view()
+
+
+@method_decorator(rate_limit(action="reset_password_from_key"), name="dispatch")
+@method_decorator(login_not_required, name="dispatch")
+class CompletePasswordResetView(
+    NextRedirectMixin,
+    FormView,
+):
+    template_name = "account/password_reset_from_key." + app_settings.TEMPLATE_EXTENSION
+    form_class = ResetPasswordKeyForm
+    success_url = reverse_lazy("account_password_reset_completed")
+
+    def dispatch(self, request, **kwargs):
+        self._process = (
+            flows.password_reset_by_code.PasswordResetVerificationProcess.resume(
+                request
+            )
+        )
+        if not self._process:
+            return HttpResponseRedirect(
+                self.passthrough_next_url(reverse("account_reset_password"))
+            )
+        if not self._process.state.get("code_confirmed"):
+            return HttpResponseRedirect(reverse("account_confirm_password_reset_code"))
+        return super().dispatch(request, **kwargs)
+
+    def get_form_class(self):
+        return get_form_class(
+            app_settings.FORMS, "reset_password_from_key", self.form_class
+        )
+
+    def get_context_data(self, **kwargs):
+        ret = super().get_context_data(**kwargs)
+        ret["action_url"] = reverse("account_complete_password_reset")
+        return ret
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self._process.user
+        return kwargs
+
+    def form_valid(self, form):
+        form.save()
+        self._process.finish()
+        if app_settings.LOGIN_ON_PASSWORD_RESET:
+            return perform_login(
+                self.request,
+                self.process.user,
+            )
+        return super().form_valid(form)
+
+
+complete_password_reset = CompletePasswordResetView.as_view()
+
+
+class ConfirmPasswordResetCodeView(NextRedirectMixin, FormView):
+    template_name = (
+        "account/confirm_password_reset_code." + app_settings.TEMPLATE_EXTENSION
+    )
+    form_class = ConfirmPasswordResetCodeForm
+
+    @method_decorator(login_not_required)
+    def dispatch(self, request, *args, **kwargs):
+        self._process = (
+            flows.password_reset_by_code.PasswordResetVerificationProcess.resume(
+                request
+            )
+        )
+        if not self._process:
+            return HttpResponseRedirect(reverse("account_login"))
+        if self._process.state.get("code_confirmed"):
+            return HttpResponseRedirect(reverse("account_complete_password_reset"))
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_class(self):
+        return get_form_class(
+            app_settings.FORMS, "confirm_password_reset_code", self.form_class
+        )
+
+    def get_form_kwargs(self):
+        ret = super().get_form_kwargs()
+        ret["code"] = self._process.code
+        return ret
+
+    def get_context_data(self, **kwargs):
+        ret = super().get_context_data(**kwargs)
+        ret["email"] = self._process.state["email"]
+        return ret
+
+    def form_valid(self, form):
+        self._process.confirm_code()
+        return HttpResponseRedirect(
+            self.passthrough_next_url(reverse("account_complete_password_reset"))
+        )
+
+    def form_invalid(self, form):
+        attempts_left = self._process.record_invalid_attempt()
+        if attempts_left:
+            return super().form_invalid(form)
+        adapter = get_adapter(self.request)
+        adapter.add_message(
+            self.request,
+            messages.ERROR,
+            message=adapter.error_messages["too_many_login_attempts"],
+        )
+        return HttpResponseRedirect(self.passthrough_next_url(reverse("account_login")))
+
+
+confirm_password_reset_code = ConfirmPasswordResetCodeView.as_view()
 
 
 class LogoutView(NextRedirectMixin, LogoutFunctionalityMixin, TemplateView):
@@ -768,21 +883,15 @@ class ConfirmEmailVerificationCodeView(FormView):
 
     def dispatch(self, request, *args, **kwargs):
         self.stage = LoginStageController.enter(request, EmailVerificationStage.key)
-        self.verification, self.pending_verification = (
-            flows.email_verification_by_code.get_pending_verification(
-                request, peek=True
-            )
+        self._process = (
+            flows.email_verification_by_code.EmailVerificationProcess.resume(request)
         )
         # preventing enumeration?
-        verification_is_fake = (
-            self.pending_verification and "code" not in self.pending_verification
-        )
+        verification_is_fake = self._process and "user_id" not in self._process.state
         # Can we at all continue?
         if (
             # No verification pending?
-            (
-                not self.pending_verification
-            )  # Anonymous, yet no stage (or fake verifcation)?
+            (not self._process)  # Anonymous, yet no stage (or fake verifcation)?
             or (
                 request.user.is_anonymous
                 and not self.stage
@@ -803,17 +912,17 @@ class ConfirmEmailVerificationCodeView(FormView):
 
     def get_form_kwargs(self):
         ret = super().get_form_kwargs()
-        ret["code"] = self.verification.key if self.verification else ""
+        ret["code"] = self._process.code if self._process else ""
         return ret
 
     def get_context_data(self, **kwargs):
         ret = super().get_context_data(**kwargs)
-        ret["email"] = self.pending_verification["email"]
+        ret["email"] = self._process.state["email"]
         ret["cancel_url"] = None if self.stage else reverse("account_email")
         return ret
 
     def form_valid(self, form):
-        email_address = self.verification.confirm(self.request)
+        email_address = self._process.finish()
         if self.stage:
             if not email_address:
                 return self.stage.abort()
@@ -827,9 +936,7 @@ class ConfirmEmailVerificationCodeView(FormView):
         return HttpResponseRedirect(url)
 
     def form_invalid(self, form):
-        attempts_left = flows.email_verification_by_code.record_invalid_attempt(
-            self.request, self.pending_verification
-        )
+        attempts_left = self._process.record_invalid_attempt()
         if attempts_left:
             return super().form_invalid(form)
         adapter = get_adapter(self.request)
@@ -938,7 +1045,9 @@ class RequestLoginCodeView(RedirectAuthenticatedUserMixin, NextRedirectMixin, Fo
         return get_form_class(app_settings.FORMS, "request_login_code", self.form_class)
 
     def form_valid(self, form):
-        flows.login_by_code.request_login_code(self.request, form.cleaned_data["email"])
+        flows.login_by_code.LoginCodeVerificationProcess.initiate(
+            request=self.request, user=form._user, email=form.cleaned_data["email"]
+        )
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -981,10 +1090,10 @@ class ConfirmLoginCodeView(NextRedirectMixin, FormView):
     @method_decorator(never_cache)
     def dispatch(self, request, *args, **kwargs):
         self.stage = request._login_stage
-        self.user, self.pending_login = flows.login_by_code.get_pending_login(
-            self.request, self.stage.login, peek=True
+        self._process = flows.login_by_code.LoginCodeVerificationProcess.resume(
+            self.stage
         )
-        if not self.pending_login:
+        if not self._process:
             return HttpResponseRedirect(reverse(_login_by_code_urlname()))
         return super().dispatch(request, *args, **kwargs)
 
@@ -993,19 +1102,15 @@ class ConfirmLoginCodeView(NextRedirectMixin, FormView):
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs["code"] = self.pending_login.get("code", "")
+        kwargs["code"] = self._process.code
         return kwargs
 
     def form_valid(self, form):
         redirect_url = self.get_next_url()
-        return flows.login_by_code.perform_login_by_code(
-            self.request, self.stage, redirect_url
-        )
+        return self._process.finish(redirect_url)
 
     def form_invalid(self, form):
-        attempts_left = flows.login_by_code.record_invalid_attempt(
-            self.request, self.stage.login
-        )
+        attempts_left = self._process.record_invalid_attempt()
         if attempts_left:
             return super().form_invalid(form)
         adapter = get_adapter(self.request)
@@ -1017,7 +1122,7 @@ class ConfirmLoginCodeView(NextRedirectMixin, FormView):
         return HttpResponseRedirect(
             reverse(
                 _login_by_code_urlname()
-                if self.pending_login["initiated_by_user"]
+                if self._process.state["initiated_by_user"]
                 else "account_login"
             )
         )
@@ -1028,7 +1133,7 @@ class ConfirmLoginCodeView(NextRedirectMixin, FormView):
         ret.update(
             {
                 "site": site,
-                "email": self.pending_login["email"],
+                "email": self._process.state["email"],
             }
         )
         return ret

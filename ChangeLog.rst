@@ -1,5 +1,30 @@
-65.4.2 (unreleased)
+65.5.0 (unreleased)
 *******************
+
+Note worthy changes
+-------------------
+
+- Added support for resetting passwords by code, instead of a link.
+
+- Simplified signup form configuration. The following settings all controlled
+  signup form: ``ACCOUNT_EMAIL_REQUIRED``, ``ACCOUNT_USERNAME_REQUIRED``,
+  ``ACCOUNT_SIGNUP_EMAIL_ENTER_TWICE``, ``ACCOUNT_SIGNUP_PASSWORD_ENTER_TWICE``.
+  This setup had its issues. For example, when email was not required it was
+  still available as an optional field, whereas the username field disappeared
+  when not required. Also, for future phone/SMS support, additional settings
+  would be required.  The settings are now all deprecated, and replaced by one
+  new setting: ``ACCOUNT_SIGNUP_FIELDS``, which can be configured to
+  e.g. ``['username*', 'email', 'password1*', 'password2*']`` to indicate which
+  fields are present and required (``'*'``). This change is performed in a
+  backwards compatible manner.
+
+- Headless: if, while signing up using a third-party provider account, there is
+  insufficient information received from the provider to automatically complete
+  the signup process, an additional step is needed to complete the missing data
+  before the user is fully signed up and authenticated.  You can now perform a
+  ``GET`` request to ``/_allauth/{client}/v1/auth/provider/signup`` to obtain
+  information on the pending signup.
+
 
 Fixes
 -----

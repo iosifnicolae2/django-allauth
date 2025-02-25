@@ -291,6 +291,18 @@ paths:
   /_allauth/{client}/v1/auth/password/request:
     post:
       summary: Request password
+      description: |
+        Initiates the password reset procedure. Depending on whether or not
+        `ACCOUNT_PASSWORD_RESET_BY_CODE_ENABLED` is `True`, the procedure is
+        either stateless or stateful.
+
+        In case codes are used, it is stateful, and a new
+        `password_reset_by_code` flow is started. In this case, on a successful
+        password reset request, you will receive a 401 indicating the pending
+        status of this flow.
+
+        In case password reset is configured to use (stateless) links, you will
+        receive a 200 on a successful password reset request.
       tags:
         - "Authentication: Password Reset"
       parameters:
@@ -310,9 +322,18 @@ paths:
               examples:
                 invalid_email:
                   $ref: "#/components/examples/InvalidEmail"
+        "401":
+          $ref: "#/components/responses/Authentication"
   /_allauth/{client}/v1/auth/password/reset:
     get:
       summary: Get password reset information
+      description: |
+        Used to obtain information on and validate a password reset key.  The
+        key passed is either the key encoded in the password reset URL that the
+        user has received per email, or, the password reset code in case of
+        `ACCOUNT_PASSWORD_RESET_BY_CODE_ENABLED`. Note that in case of a code,
+        the number of requests you can make is limited (by
+        `ACCOUNT_PASSWORD_RESET_BY_CODE_MAX_ATTEMPTS`).
       tags:
         - "Authentication: Password Reset"
       parameters:
@@ -331,6 +352,13 @@ paths:
               examples:
                 password_reset_key_invalid:
                   $ref: "#/components/examples/InvalidPasswordResetKey"
+        "409":
+          description: |
+            Conflict. There is no password reset (by code) flow pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictResponse"
     post:
       summary: Reset password
       description: |
@@ -360,6 +388,13 @@ paths:
                   $ref: "#/components/examples/InvalidEmail"
         "401":
           $ref: "#/components/responses/Authentication"
+        "409":
+          description: |
+            Conflict. There is no password reset (by code) flow pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictResponse"
   ######################################################################
   # Authentication: Providers
   ######################################################################
@@ -431,6 +466,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/ForbiddenResponse"
   /_allauth/{client}/v1/auth/provider/signup:
+    get:
+      tags:
+        - "Authentication: Providers"
+      summary: Provider signup information
+      description: |
+        If, while signing up using a third-party provider account, there is
+        insufficient information received from the provider to automatically
+        complete the signup process, an additional step is needed to complete
+        the missing data before the user is fully signed up and authenticated.
+        The information available so far, such as the pending provider account,
+        can be retrieved via this endpoint.
+      parameters:
+        - $ref: "#/components/parameters/Client"
+      responses:
+        "200":
+          $ref: "#/components/responses/ProviderSignup"
+        "409":
+          description: |
+            Conflict. The provider signup flow is not pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictResponse"
     post:
       tags:
         - "Authentication: Providers"
@@ -1852,6 +1910,8 @@ components:
           type: boolean
         login_by_code_enabled:
           type: boolean
+        password_reset_by_code_enabled:
+          type: boolean
       required:
         - authentication_method
         - email_verification_by_code_enabled
@@ -2868,6 +2928,34 @@ components:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProviderAccount"
+            required:
+              - status
+              - data
+    ProviderSignup:
+      description: |
+        Information relating to the pending provider signup.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                $ref: "#/components/schemas/StatusOK"
+              data:
+                type: object
+                properties:
+                  email:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EmailAddress"
+                  account:
+                    $ref: "#/components/schemas/ProviderAccount"
+                  user:
+                    $ref: "#/components/schemas/User"
+                required:
+                  - email
+                  - account
+                  - user
             required:
               - status
               - data

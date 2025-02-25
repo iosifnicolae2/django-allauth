@@ -77,7 +77,12 @@ class AppSettings:
         """
         The user is required to hand over an email address when signing up
         """
-        return self._setting("EMAIL_REQUIRED", False)
+        warnings.warn(
+            "app_settings.EMAIL_REQUIRED is deprecated, use: app_settings.SIGNUP_FIELDS['email']['required']",
+            stacklevel=2,
+        )
+        email = self.SIGNUP_FIELDS.get("email")
+        return email and email["required"]
 
     @property
     def EMAIL_VERIFICATION(self):
@@ -115,7 +120,8 @@ class AppSettings:
     @property
     def AUTHENTICATION_METHOD(self):
         warnings.warn(
-            "app_settings.AUTHENTICATION_METHOD is deprecated, use: app_settings.LOGIN_METHODS"
+            "app_settings.AUTHENTICATION_METHOD is deprecated, use: app_settings.LOGIN_METHODS",
+            stacklevel=2,
         )
         methods = self.LOGIN_METHODS
         if self.LoginMethod.EMAIL in methods and self.LoginMethod.USERNAME in methods:
@@ -159,15 +165,22 @@ class AppSettings:
         """
         Signup email verification
         """
-        return self._setting("SIGNUP_EMAIL_ENTER_TWICE", False)
+        warnings.warn(
+            "app_settings.SIGNUP_EMAIL_ENTER_TWICE is deprecated, use: 'email2' in app_settings.SIGNUP_FIELDS",
+            stacklevel=2,
+        )
+        return "email2" in self.SIGNUP_FIELDS
 
     @property
     def SIGNUP_PASSWORD_ENTER_TWICE(self):
         """
         Signup password verification
         """
-        legacy = self._setting("SIGNUP_PASSWORD_VERIFICATION", True)
-        return self._setting("SIGNUP_PASSWORD_ENTER_TWICE", legacy)
+        warnings.warn(
+            "app_settings.SIGNUP_PASSWORD_ENTER_TWICE is deprecated, use: 'password2' in app_settings.SIGNUP_FIELDS",
+            stacklevel=2,
+        )
+        return "password2" in self.SIGNUP_FIELDS
 
     @property
     def SIGNUP_REDIRECT_URL(self):
@@ -252,11 +265,45 @@ class AppSettings:
         return self._setting("SIGNUP_FORM_HONEYPOT_FIELD", None)
 
     @property
+    def SIGNUP_FIELDS(self) -> dict:
+        fields = self._setting("SIGNUP_FIELDS", None)
+        if not fields:
+            fields = []
+            username = self._setting("USERNAME_REQUIRED", True)
+            email = self._setting("EMAIL_REQUIRED", False)
+            email2 = self._setting("SIGNUP_EMAIL_ENTER_TWICE", False)
+            password2 = self._setting(
+                "SIGNUP_PASSWORD_ENTER_TWICE",
+                self._setting("SIGNUP_PASSWORD_VERIFICATION", True),
+            )
+            if email:
+                fields.append("email*")
+            else:
+                fields.append("email")
+            if email2:
+                fields.append("email2*" if email else "email2")
+            if username:
+                fields.append("username*")
+            fields.append("password1*")
+            if password2:
+                fields.append("password2*")
+        ret = {}
+        for field in fields:
+            f, req, _ = field.partition("*")
+            ret[f] = {"required": bool(req)}
+        return ret
+
+    @property
     def USERNAME_REQUIRED(self):
         """
         The user is required to enter a username when signing up
         """
-        return self._setting("USERNAME_REQUIRED", True)
+        warnings.warn(
+            "app_settings.USERNAME_REQUIRED is deprecated, use: app_settings.SIGNUP_FIELDS['username']['required']",
+            stacklevel=2,
+        )
+        username = self.SIGNUP_FIELDS.get("username")
+        return username and username["required"]
 
     @property
     def USERNAME_MIN_LENGTH(self):
@@ -397,6 +444,18 @@ class AppSettings:
             else:
                 ret = []
         return ret
+
+    @property
+    def PASSWORD_RESET_BY_CODE_ENABLED(self):
+        return self._setting("PASSWORD_RESET_BY_CODE_ENABLED", False)
+
+    @property
+    def PASSWORD_RESET_BY_CODE_MAX_ATTEMPTS(self):
+        return self._setting("PASSWORD_RESET_BY_CODE_MAX_ATTEMPTS", 3)
+
+    @property
+    def PASSWORD_RESET_BY_CODE_TIMEOUT(self):
+        return self._setting("PASSWORD_RESET_BY_CODE_TIMEOUT", 3 * 60)
 
     @property
     def PASSWORD_RESET_TOKEN_GENERATOR(self):
